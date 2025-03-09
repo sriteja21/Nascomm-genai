@@ -4,6 +4,7 @@ import google.generativeai as genai
 from dotenv import load_dotenv
 import os
 import time
+import math
 
 # Initialize Google AI
 load_dotenv()
@@ -32,7 +33,7 @@ class handDetector:
         self.mpDraw = mp.solutions.drawing_utils
 
     def draw_multiline_text(img, text, position, font, scale, color, thickness, line_spacing=30):
-        # (x, y) = position
+        # x, y = position
         print(position)
         for i, line in enumerate(text.split("\n")):
             cv2.putText(img, line, (x, y + i * line_spacing), font, scale, color, thickness)
@@ -58,36 +59,73 @@ class handDetector:
                 if draw:
                     cv2.circle(img, (cx, cy), 7, (255, 0, 255), cv2.FILLED)
         return lmList
-
+def distance(point1, point2):
+    return math.sqrt((point1[1] - point2[1]) ** 2 + (point1[2] - point2[2]) ** 2)
 def recognize_gesture(lmList):
     """Recognize simple hand gestures based on landmark positions."""
     if not lmList:
-        return "No hand detected"
+            return "No hand detected"
 
-    # Get fingertip positions
-    thumb_tip = lmList[4][2]  # Y-axis for thumb tip
+        # Get fingertip Y-axis positions
+    thumb_tip = lmList[4][2]
     index_tip = lmList[8][2]
     middle_tip = lmList[12][2]
     ring_tip = lmList[16][2]
     pinky_tip = lmList[20][2]
 
-    # Get lower finger joints (for comparison)
+    # Get PIP joint Y-axis positions (for index, middle, ring, and pinky)
     index_pip = lmList[6][2]
     middle_pip = lmList[10][2]
     ring_pip = lmList[14][2]
     pinky_pip = lmList[18][2]
 
-    # Gesture classification
-    if thumb_tip < index_pip and middle_tip > index_pip and ring_tip > index_pip and pinky_tip > index_pip:
+    # Define a threshold for the OK sign (you may need to adjust this value)
+    ok_threshold = 30
+
+    # OK Sign: Thumb and index tips are close forming a circle; other fingers extended
+    if distance(lmList[4], lmList[8]) < ok_threshold and \
+    middle_tip < middle_pip and ring_tip < ring_pip and pinky_tip < pinky_pip:
+        return "OK Sign"
+
+    # Thumbs Up: Thumb is extended (tip above the index PIP) while other fingers are folded
+    if thumb_tip < index_pip and \
+    middle_tip > index_pip and ring_tip > index_pip and pinky_tip > index_pip:
         return "Thumbs Up"
-    elif (index_tip < index_pip and middle_tip < middle_pip and ring_tip < ring_pip and pinky_tip < pinky_pip):
+
+    # Open Palm: All fingers extended (tips above their PIP joints)
+    if index_tip < index_pip and middle_tip < middle_pip and \
+    ring_tip < ring_pip and pinky_tip < pinky_pip:
         return "Open Palm"
-    elif index_tip < middle_tip < ring_tip < pinky_tip:
-        return "Pointing"
-    elif (index_tip > index_pip and middle_tip > middle_pip and ring_tip > ring_pip and pinky_tip > pinky_pip):
+
+    # Fist: All fingers folded (tips below their PIP joints)
+    if index_tip > index_pip and middle_tip > middle_pip and \
+    ring_tip > ring_pip and pinky_tip > pinky_pip:
         return "Fist"
-    else:
-        return "Unknown Gesture"
+
+    # Pointing: Only index finger extended (others folded)
+    if index_tip < index_pip and \
+    middle_tip > middle_pip and ring_tip > ring_pip and pinky_tip > pinky_pip:
+        return "Pointing"
+
+    # Victory/Peace: Index and middle fingers extended; ring and pinky folded
+    if index_tip < index_pip and middle_tip < middle_pip and \
+    ring_tip > ring_pip and pinky_tip > pinky_pip:
+        return "Victory/Peace"
+
+    # Rock Sign: Index and pinky extended; middle and ring folded
+    if index_tip < index_pip and \
+    middle_tip > middle_pip and ring_tip > ring_pip and \
+    pinky_tip < pinky_pip:
+        return "Rock Sign"
+
+    # Shaka: Thumb and pinky extended; index, middle, and ring fingers folded.
+    # For thumb, compare with landmark 3 to check if it's extended.
+    if thumb_tip < lmList[3][2] and \
+    index_tip > index_pip and middle_tip > middle_pip and ring_tip > ring_pip and \
+    pinky_tip < pinky_pip:
+        return "Shaka"
+
+    return "Unknown Gesture"
 
 gesture_cache = {}
 
@@ -139,10 +177,11 @@ def main():
         lmList = detector.findPosition(img)
 
         gesture = recognize_gesture(lmList)
-        description = generate_narrative(gesture)
+        # description = generate_narrative(gesture)
 
         cv2.putText(img, f"Gesture: {gesture}", (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
-        # detector.draw_multiline_text(img, description, (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+        # cv2.putText(img, description, (150, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
+        # detector.draw_multiline_text(img, description, [50, 150], cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
 
         cv2.imshow("Hand Gesture Recognition", img)
         if cv2.waitKey(1) & 0xFF == 27:  # Press ESC to exit
