@@ -6,3 +6,4 @@ python-dotenv
 streamlit
 streamlit-webrtc
 pyautogui
+opencv-contrib-python
