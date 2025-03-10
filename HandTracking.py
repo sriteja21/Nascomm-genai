@@ -1,6 +1,7 @@
 import cv2
 import mediapipe as mp
 import google.generativeai as genai
+from google.api_core.exceptions import ResourceExhausted
 from dotenv import load_dotenv
 import os
 import time
@@ -129,12 +130,26 @@ def recognize_gesture(lmList):
 
 gesture_cache = {}
 
-def generate_narrative(gesture):
-    """Use PaLM to generate a description for the recognized gesture with error handling and caching."""
-    if gesture in ["Unknown Gesture", "No hand detected"]:
-        return gesture
+# Predefined AI assistant responses
+custom_responses = {
+    "Thumbs Up": "Great! You agreed. 👍",
+    "Waving": "Hello! Nice to see you waving! 👋",
+    "OK Sign": "Got it! Everything seems good. 😊",
+    "Fist": "That looks powerful! What's on your mind? 💪",
+    "Victory/Peace": "Peace! Hope you're having a great day. ✌️",
+}
 
-    # Return cached description if available
+def generate_narrative(gesture):
+    """Generate an AI assistant response based on the recognized gesture."""
+    
+    if gesture in ["Unknown Gesture", "No hand detected"]:
+        return gesture  # Return as-is for undefined gestures
+
+    # Return custom response if gesture is predefined
+    if gesture in custom_responses:
+        return custom_responses[gesture]
+
+    # Return cached response if available
     if gesture in gesture_cache:
         return gesture_cache[gesture]
 
@@ -146,21 +161,26 @@ def generate_narrative(gesture):
 
     for attempt in range(max_retries):
         try:
-            response = model.generate_content(f"Describe the meaning of the {gesture} hand gesture in an engaging way.")
+            response = model.generate_content(
+                f"You are an AI assistant. The user just made a '{gesture}' hand gesture. Respond in a friendly and engaging way."
+            )
 
-            if response and hasattr(response, "text"):
-                gesture_cache[gesture] = response.text  # Cache the response
-                return response.text
+            # Check if response is valid and contains text
+            if response and hasattr(response, "text") and response.text.strip():
+                ai_response = response.text.strip()
+                gesture_cache[gesture] = ai_response  # Cache response
+                return ai_response
             else:
-                return "Failed to generate description."
+                return "Hmm, I'm not sure how to respond to that gesture."
 
-        except google.api_core.exceptions.ResourceExhausted:
+        except ResourceExhausted:
             print(f"Quota exhausted. Retrying in {wait_time} seconds...")
             time.sleep(wait_time)
             wait_time *= 2  # Exponential backoff
 
         except Exception as e:
-            return f"Error: {str(e)}"
+            print(f"Error generating response: {str(e)}")
+            return "Oops! Something went wrong."
 
     return "API quota exceeded. Try again later."
 
@@ -177,10 +197,10 @@ def main():
         lmList = detector.findPosition(img)
 
         gesture = recognize_gesture(lmList)
-        # description = generate_narrative(gesture)
+        description = generate_narrative(gesture)
 
         cv2.putText(img, f"Gesture: {gesture}", (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
-        # cv2.putText(img, description, (150, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
+        cv2.putText(img, description, (150, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
         # detector.draw_multiline_text(img, description, [50, 150], cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
 
         cv2.imshow("Hand Gesture Recognition", img)
